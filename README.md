@@ -68,6 +68,16 @@ python -m http.server 5500
 
 Open http://localhost:5500/Login.html and register a student, doctor, or nurse account.
 
+## Team
+
+Built by a team of five students for the Software Engineering course at Al Akhawayn University.
+
+- **Kenza Qribis**: led the project and reviewed and refined every part of the system. Co-developed the FastAPI backend and the Gemini chatbot, co-developed the frontend, and contributed to the paper and presentation.
+- **Aya Ben Hammadi**: backend development
+- **Ali El Hardouz**: backend development
+- **Meriem Laghafi**: frontend development
+- **Zaineb Lamghari**: project paper and presentation
+
 ## Notes
 
 This is a course project configured for local development. Before any real deployment, CORS should be restricted to the frontend's domain, a strong `SECRET_KEY` must be set, and the database should move to PostgreSQL.
