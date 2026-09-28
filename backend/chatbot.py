@@ -21,7 +21,7 @@ try:
         model = None
     else:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        model = genai.GenerativeModel('gemini-3.5-flash-lite')
         AI_AVAILABLE = True
         print("✅ Google Gemini AI initialized successfully")
 except Exception as e:
@@ -262,7 +262,7 @@ def ai_reply(message: str, conversation_id: str = "default", user_context: Dict 
         return {
             "reply": reply,
             "conversation_id": conversation_id,
-            "model": "gemini-2.0-flash-exp",
+            "model": "gemini-3.5-flash-lite",
             "has_symptoms": symptom_check["has_symptoms"],
             "symptom_types": symptom_check.get("symptom_types", [])
         }

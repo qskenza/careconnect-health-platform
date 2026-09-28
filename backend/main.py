@@ -1133,60 +1133,6 @@ def cancel_appointment(
     return {"message": "Appointment cancelled successfully"}
 
 
-@app.get("/doctors/{doctor_id}/available-slots")
-def get_available_slots(
-    doctor_id: int,
-    date: str,
-    db: Session = Depends(get_db),
-):
-    """Get available time slots for a doctor on a specific date"""
-    # Verify doctor exists
-    doctor = db.query(models.Doctor).filter(
-        models.Doctor.id == doctor_id,
-        models.Doctor.is_available == True
-    ).first()
-
-    if not doctor:
-        raise HTTPException(404, "Doctor not found or not available")
-
-    # Parse the date
-    try:
-        appointment_date = datetime.strptime(date, "%Y-%m-%d")
-    except ValueError:
-        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
-
-    # Define all possible time slots (30-minute intervals)
-    all_slots = [
-        '09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM',
-        '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM',
-        '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM',
-        '04:00 PM', '04:30 PM', '05:00 PM'
-    ]
-
-    # Get all booked appointments for this doctor on this date (excluding cancelled)
-    booked_appointments = db.query(models.Appointment).filter(
-        models.Appointment.doctor_id == doctor_id,
-        models.Appointment.appointment_date == appointment_date,
-        models.Appointment.status != "cancelled"
-    ).all()
-
-    # Get list of booked time slots
-    booked_slots = [apt.appointment_time for apt in booked_appointments]
-
-    # Filter out booked slots from available slots
-    available_slots = [slot for slot in all_slots if slot not in booked_slots]
-
-    return {
-        "doctor_id": doctor_id,
-        "doctor_name": doctor.name,
-        "date": date,
-        "available_slots": available_slots,
-        "booked_slots": booked_slots
-    }
-
-
-# Add this to backend/main.py after the appointments endpoints
-
 @app.get("/appointments/upcoming")
 def get_upcoming_appointments(
     current_user: models.User = Depends(get_current_user),
@@ -2241,7 +2187,7 @@ def startup_event():
 # ---------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Starting CareConnect API Server...")
-    print("📍 Server: http://127.0.0.1:8000")
-    print("📚 Docs: http://127.0.0.1:8000/docs")
+    print("???? Starting CareConnect API Server...")
+    print("???? Server: http://127.0.0.1:8000")
+    print("???? Docs: http://127.0.0.1:8000/docs")
     uvicorn.run(app, host="0.0.0.0", port=8000)
