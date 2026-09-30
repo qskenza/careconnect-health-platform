@@ -1,167 +1,110 @@
-# Darija Translator: LLM-Powered REST API
+# CareConnect — Campus Health Platform
 
-A RESTful web service in Java that translates English into **Moroccan Darija** using Google Gemini, with four different clients (Chrome extension, PHP web app, Python CLI, and React Native mobile app) all talking to the same API.
+A full-stack healthcare management platform for a university health center. Students, doctors, nurses and administrators each get their own portal, connected through one shared backend: a booking made by a student appears in the doctor's schedule, and a prescription written by the doctor appears on the student's dashboard. Includes an AI chatbot powered by Google Gemini.
 
-The project demonstrates a distributed architecture where heterogeneous clients interoperate with one central service over standard HTTP.
-
-![Deployment diagram](out/uml/deployment-diagram/deployment-diagram.png)
+Built for the Software Engineering course at Al Akhawayn University.
 
 ## Features
 
-- **Java REST API** built with Jakarta RESTful Web Services (JAX-RS, Jersey + Grizzly)
-- **Basic Authentication** on the translation endpoint
-- **LLM translation** through the Google Gemini API
-- **Automatic fallback** to a local dictionary-based translator when no API key is set or the API is unavailable (rate limits, high demand)
-- **Four clients** on four platforms, sharing one API
-- **UML documentation** (class, deployment, sequence, and use-case diagrams) and an **OpenAPI spec**
+**Students**
+- Register, log in, and manage their profile and emergency contact
+- Book, reschedule, and cancel appointments from doctors' real availability (past dates, passed time slots and already-booked slots are blocked)
+- Add and remove allergies, medications and conditions
+- View visit history, including upcoming appointments and completed visits
+- See prescriptions and referrals issued by their doctors (read-only)
+- Share their location from the Emergency page, which alerts the nursing staff
+- Ask the AI chatbot health and booking questions
 
-## Project structure
+**Doctors**
+- Manage their profile, professional experience, and weekly availability
+- See all upcoming appointments booked by students, with the reason for the visit
+- Open a patient's records: allergies, medications, conditions, prescriptions and recent visits
+- Mark an appointment as completed with a diagnosis, which adds it to the student's visit history
+- Issue prescriptions, create and track referrals, and add medical records
 
-```
-llm-darija-translator-service/   Java REST API (Maven)
-chrome-extension/                Chrome extension client (Manifest V3, side panel)
-php-client/                      PHP web client
-python-client/                   Python CLI client
-react-native-client/             Mobile client (Expo)
-uml/                             PlantUML sources
-out/uml/                         Rendered UML diagrams (PNG)
-docs/                            OpenAPI spec and Postman collection
-```
+**Nurses**
+- See today's patients and upcoming appointments
+- Receive and resolve emergency requests sent by students
+- View health-center statistics
 
-## API
+**Administrators**
+- Dashboard with key statistics (users, appointments, active emergencies)
+- Search and filter all users by role
+- Create student, doctor and nurse accounts
+- Deactivate or reactivate accounts (deactivated users cannot log in, and deactivated doctors are hidden from booking)
+- View all appointments and cancel them if needed
 
-| Method | Endpoint | Description | Auth |
-|---|---|---|---|
-| GET | `/translator/health` | Health check | No |
-| GET | `/translator/info` | Service information | No |
-| POST | `/translator/translate` | Translate text into Darija | Yes (Basic) |
+## Demo accounts
 
-**Request**
+These accounts are created automatically the first time the backend starts:
 
-```json
-{
-  "text": "Hello, how are you?",
-  "sourceLanguage": "English",
-  "targetLanguage": "Moroccan Darija"
-}
-```
-
-**Response**
-
-```json
-{
-  "sourceText": "Hello, how are you?",
-  "translatedText": "salam, labas 3lik?",
-  "sourceLanguage": "English",
-  "targetLanguage": "Moroccan Darija",
-  "provider": "gemini-3.5-flash-lite"
-}
-```
-
-The `provider` field shows which engine answered: the Gemini model, or the local fallback.
-
-The full specification is in [`docs/openapi.yaml`](docs/openapi.yaml), and a ready-to-import Postman collection is in [`docs/postman_collection.json`](docs/postman_collection.json).
-
-## Running the backend
-
-**Requirements:** Java 17+, Maven 3.9+
-
-**1. Set environment variables**
-
-```bash
-export APP_USERNAME=admin
-export APP_PASSWORD=change-me
-export GEMINI_API_KEY=your-gemini-api-key
-export GEMINI_MODEL=gemini-3.5-flash-lite   # optional, this is the default
-```
-
-On Windows PowerShell, use `$env:GEMINI_API_KEY="your-gemini-api-key"` (and the same for the others).
-
-If `APP_USERNAME` and `APP_PASSWORD` are not set, the service falls back to development defaults (`admin` / `admin123`). Always set your own credentials outside local testing. Without `GEMINI_API_KEY`, the service uses the local fallback translator.
-
-**2. Build and run**
-
-```bash
-cd llm-darija-translator-service
-mvn clean package
-java -jar target/llm-darija-translator-service-1.0.0-jar-with-dependencies.jar
-```
-
-The service runs at `http://localhost:8080`.
-
-**3. Test it**
-
-```bash
-curl http://localhost:8080/translator/health
-
-curl -X POST http://localhost:8080/translator/translate \
-  -u admin:change-me \
-  -H "Content-Type: application/json" \
-  -d '{"text":"Thank you","sourceLanguage":"English","targetLanguage":"Moroccan Darija"}'
-```
-
-## Clients
-
-### Chrome extension
-
-Translates text you select on any web page, via the right-click menu, in a side panel.
-
-1. Open `chrome://extensions`
-2. Enable **Developer mode**
-3. Click **Load unpacked** and select the `chrome-extension` folder
-
-### PHP web client
-
-```bash
-cd php-client
-php -S localhost:8000
-```
-
-Then open http://localhost:8000.
-
-### Python CLI client
-
-```bash
-cd python-client
-pip install -r requirements.txt
-python client.py
-```
-
-### React Native mobile client (Expo)
-
-```bash
-cd react-native-client
-npm install
-npx expo start
-```
-
-On a physical phone, `localhost` points to the phone itself, not your computer. Set `API_URL` in `App.js` to your computer's local IP address, for example `http://192.168.1.20:8080/translator/translate`.
-
-## UML diagrams
-
-| Diagram | Source | Image |
+| Role | Username | Password |
 |---|---|---|
-| Class | [`uml/class-diagram.puml`](uml/class-diagram.puml) | [PNG](out/uml/class-diagram/class-diagram.png) |
-| Deployment | [`uml/deployment-diagram.puml`](uml/deployment-diagram.puml) | [PNG](out/uml/deployment-diagram/deployment-diagram.png) |
-| Sequence | [`uml/sequence-diagram.puml`](uml/sequence-diagram.puml) | [PNG](out/uml/sequence-diagram/sequence-diagram.png) |
-| Use case | [`uml/use-case-diagram.puml`](uml/use-case-diagram.puml) | [PNG](out/uml/use-case-diagram/use-case-diagram.png) |
+| Student | `alexandra` | `password123` |
+| Doctor | `sarah.chen` | `doctor123` |
+| Doctor | `emily.carter` | `doctor123` |
+| Doctor | `elena.rodriguez` | `doctor123` |
+| Nurse | `nurse.amina` | `nurse123` |
+| Admin | `admin` | `admin123` |
 
-## Note: Arabic script in Windows PowerShell
+To see the portals working together, log in as `alexandra` and book an appointment with Dr. Sarah Chen, then log in as `sarah.chen` to see the booking, write a prescription and complete the visit, and log back in as `alexandra` to see the result.
 
-PowerShell may display Arabic-script output incorrectly because of console encoding. To view it properly, write the result to a UTF-8 file:
+## Tech stack
 
-```powershell
-$response.translatedText | Out-File result.txt -Encoding utf8
-notepad result.txt
+| Layer | Technologies |
+|---|---|
+| Backend | Python, FastAPI, SQLAlchemy, Pydantic |
+| Database | SQLite (PostgreSQL-ready through `DATABASE_URL`) |
+| Auth | JWT tokens, bcrypt password hashing, role-based access for 4 roles |
+| AI | Google Gemini API |
+| Frontend | HTML, CSS, vanilla JavaScript |
+
+## Architecture
+
+```
+frontend/  (HTML + JS pages)  ──HTTP/JSON──▶  backend/  (FastAPI REST API, 61 endpoints)
+                                                 ├── SQLAlchemy models (12 tables)
+                                                 ├── JWT auth + role checks (student, doctor, nurse, admin)
+                                                 ├── Booking rules (no past slots, no double booking)
+                                                 └── Gemini chatbot
 ```
 
-## What this project demonstrates
+## Getting started
 
-- REST API design and endpoint security
-- Integrating an LLM API with a graceful fallback
-- Interoperability between clients on four different platforms
-- Software design documentation with UML and OpenAPI
+**1. Start the backend**
 
-## Author
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env            # then add your own SECRET_KEY and GOOGLE_API_KEY
+python main.py
+```
 
-Kenza Qribis, Al Akhawayn University
+The API runs at http://127.0.0.1:8000, and interactive docs are at http://127.0.0.1:8000/docs. The database and the demo accounts are created automatically on first start. To reset everything, stop the server and delete `backend/careconnect.db`.
+
+**2. Start the frontend**
+
+In a second terminal:
+
+```bash
+cd frontend
+python -m http.server 5500
+```
+
+Open http://localhost:5500/Login.html and log in with one of the demo accounts, or register a new one.
+
+## Team
+
+Built by a team of five students for the Software Engineering course at Al Akhawayn University.
+
+- **Kenza Qribis**: led the project and reviewed and refined every part of the system. Co-developed the FastAPI backend and the Gemini chatbot, co-developed the frontend, and contributed to the paper and presentation. After the course, added the admin portal, connected the doctor, student and nurse portals, and fixed booking and date-handling bugs.
+- **Aya Ben Hammadi**: backend development
+- **Ali El Hardouz**: backend development
+- **Meriem Laghafi**: frontend development
+- **Zaineb Lamghari**: project paper and presentation
+
+## Notes
+
+This is a course project configured for local development. The demo passwords are for testing only. Before any real deployment, CORS should be restricted to the frontend's domain, a strong `SECRET_KEY` must be set, the demo accounts removed, and the database moved to PostgreSQL.
