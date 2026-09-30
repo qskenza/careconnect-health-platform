@@ -223,6 +223,51 @@ class DoctorMedicalRecordCreate(BaseModel):
 
 
 # ---------------------------------------------------------
+# SCHEDULING HELPERS
+# ---------------------------------------------------------
+def slot_datetime(day, time_str):
+    """Combine a date and a '09:30 AM' string into a datetime."""
+    return datetime.combine(day, datetime.strptime(time_str, "%I:%M %p").time())
+
+
+def ensure_future_slot(day, time_str):
+    """Reject dates in the past and times that have already passed today."""
+    if day < datetime.now().date():
+        raise HTTPException(400, "You cannot book an appointment on a past date")
+    try:
+        when = slot_datetime(day, time_str)
+    except (ValueError, TypeError):
+        raise HTTPException(400, "Invalid time format. Use e.g. 09:30 AM")
+    if when <= datetime.now():
+        raise HTTPException(400, "This time has already passed. Please choose a later slot")
+
+
+def ensure_slot_free(db, doctor_id, day, time_str, exclude_id=None):
+    query = db.query(models.Appointment).filter(
+        models.Appointment.doctor_id == doctor_id,
+        models.Appointment.appointment_date == day,
+        models.Appointment.appointment_time == time_str,
+        models.Appointment.status != "cancelled",
+    )
+    if exclude_id:
+        query = query.filter(models.Appointment.id != exclude_id)
+    if query.first():
+        raise HTTPException(400, "This time slot is already booked")
+
+
+def get_doctor_or_404(db, user):
+    doctor = db.query(models.Doctor).filter(models.Doctor.user_id == user.id).first()
+    if not doctor:
+        raise HTTPException(404, "Doctor profile not found")
+    return doctor
+
+
+def require_role(user, *roles):
+    if user.role not in roles:
+        raise HTTPException(403, "Access denied")
+
+
+# ---------------------------------------------------------
 # TOKEN & AUTH
 # ---------------------------------------------------------
 def create_access_token(data: dict):
@@ -246,6 +291,8 @@ def get_current_user(
 
         if not user:
             raise HTTPException(401, "User not found")
+        if user.is_active is False:
+            raise HTTPException(401, "Account deactivated")
 
         return user
 
@@ -434,6 +481,8 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 
     if not db_user or not verify_password(user.password, db_user.password_hash):
         raise HTTPException(401, "Invalid credentials")
+    if db_user.is_active is False:
+        raise HTTPException(403, "This account has been deactivated. Contact the administrator.")
 
     token = create_access_token({"sub": db_user.username})
 
@@ -691,11 +740,33 @@ def get_all_visits(
     visits = db.query(models.Visit).filter(
         models.Visit.user_id == current_user.id
     ).order_by(models.Visit.visit_date.desc()).all()
-    
-    total = len(visits)
-    upcoming = len([v for v in visits if v.status == "upcoming"])
+
+    # Booked appointments that haven't happened yet (or were cancelled)
+    appointments = db.query(models.Appointment).filter(
+        models.Appointment.user_id == current_user.id,
+        models.Appointment.status.in_(["upcoming", "cancelled"])
+    ).order_by(models.Appointment.appointment_date.desc()).all()
+    appointment_items = [
+        {
+            "id": f"appt-{a.id}",
+            "appointment_id": a.id,
+            "date": a.appointment_date.isoformat(),
+            "time_start": a.appointment_time,
+            "time_end": None,
+            "doctor_name": a.doctor.name if a.doctor else "Unknown",
+            "diagnosis": a.type,
+            "type": a.type,
+            "location": a.location,
+            "notes": a.notes,
+            "status": a.status,
+        }
+        for a in appointments
+    ]
+
+    total = len(visits) + len(appointment_items)
+    upcoming = len([a for a in appointment_items if a["status"] == "upcoming"])
     completed = len([v for v in visits if v.status == "completed"])
-    cancelled = len([v for v in visits if v.status == "cancelled"])
+    cancelled = len([a for a in appointment_items if a["status"] == "cancelled"])
     
     return {
         "statistics": {
@@ -718,7 +789,7 @@ def get_all_visits(
                 "status": v.status
             }
             for v in visits
-        ]
+        ] + appointment_items
     }
 
 
@@ -727,8 +798,8 @@ def get_all_visits(
 # ---------------------------------------------------------
 @app.get("/doctors")
 def get_doctors(db: Session = Depends(get_db)):
-    # Get ALL registered doctors, not just available ones
-    doctors = db.query(models.Doctor).all()
+    # Only doctors whose accounts are active can be booked
+    doctors = db.query(models.Doctor).filter(models.Doctor.is_available == True).all()
 
     return [
         {
@@ -1030,20 +1101,15 @@ def create_appointment(
     
     # Parse date
     try:
-        appt_date = datetime.strptime(appointment.appointment_date, "%Y-%m-%d")
+        appt_date = datetime.strptime(appointment.appointment_date, "%Y-%m-%d").date()
     except ValueError:
         raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
     
-    # Check if slot is available (basic check)
-    existing = db.query(models.Appointment).filter(
-        models.Appointment.doctor_id == appointment.doctor_id,
-        models.Appointment.appointment_date == appt_date,
-        models.Appointment.appointment_time == appointment.appointment_time,
-        models.Appointment.status != "cancelled"
-    ).first()
-    
-    if existing:
-        raise HTTPException(400, "This time slot is already booked")
+    if current_user.role != "student":
+        raise HTTPException(403, "Only students can book appointments")
+
+    ensure_future_slot(appt_date, appointment.appointment_time)
+    ensure_slot_free(db, appointment.doctor_id, appt_date, appointment.appointment_time)
     
     # Create appointment
     db_appointment = models.Appointment(
@@ -1092,15 +1158,25 @@ def update_appointment(
     
     # Check 12-hour rule
     if appointment.appointment_date:
-        hours_until = (appointment.appointment_date - datetime.now()).total_seconds() / 3600
+        appt_time = datetime.strptime(appointment.appointment_time, "%I:%M %p").time() if appointment.appointment_time else datetime.min.time()
+        appt_datetime = datetime.combine(appointment.appointment_date, appt_time)
+        hours_until = (appt_datetime - datetime.now()).total_seconds() / 3600
         if hours_until < 12:
             raise HTTPException(400, "Cannot reschedule within 12 hours of appointment")
     
+    # Validate the new date/time before saving
+    try:
+        new_date = datetime.strptime(updates.appointment_date, "%Y-%m-%d").date() if updates.appointment_date else appointment.appointment_date
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+    new_time = updates.appointment_time or appointment.appointment_time
+    if updates.appointment_date or updates.appointment_time:
+        ensure_future_slot(new_date, new_time)
+        ensure_slot_free(db, appointment.doctor_id, new_date, new_time, exclude_id=appointment.id)
+
     # Update fields
-    if updates.appointment_date:
-        appointment.appointment_date = datetime.strptime(updates.appointment_date, "%Y-%m-%d")
-    if updates.appointment_time:
-        appointment.appointment_time = updates.appointment_time
+    appointment.appointment_date = new_date
+    appointment.appointment_time = new_time
     if updates.type:
         appointment.type = updates.type
     if updates.notes:
@@ -1150,7 +1226,12 @@ def get_upcoming_appointments(
     result = []
     for a in appointments:
         # Calculate if can reschedule (12 hour rule)
-        appointment_datetime = datetime.combine(a.appointment_date, datetime.min.time())
+        try:
+            appointment_datetime = slot_datetime(a.appointment_date, a.appointment_time)
+        except (ValueError, TypeError):
+            appointment_datetime = datetime.combine(a.appointment_date, datetime.min.time())
+        if appointment_datetime < datetime.now():
+            continue  # already passed today
         hours_until = (appointment_datetime - datetime.now()).total_seconds() / 3600
         can_reschedule = hours_until > 12
         
@@ -1184,12 +1265,17 @@ def complete_appointment(
     Mark an appointment as completed and create a visit record.
     This should be called by doctors or automatically after the appointment time.
     """
+    require_role(current_user, "doctor", "admin")
     appointment = db.query(models.Appointment).filter(
         models.Appointment.id == appointment_id
     ).first()
     
     if not appointment:
         raise HTTPException(404, "Appointment not found")
+    if current_user.role == "doctor" and appointment.doctor_id != get_doctor_or_404(db, current_user).id:
+        raise HTTPException(403, "This appointment belongs to another doctor")
+    if appointment.status != "upcoming":
+        raise HTTPException(400, f"Appointment is already {appointment.status}")
     
     # Update appointment status
     appointment.status = "completed"
@@ -1340,9 +1426,12 @@ def get_doctor_schedule(
             {
                 "id": a.id,
                 "patient_name": a.user.full_name if a.user else "Unknown",
+                "patient_user_id": a.user_id,
+                "patient_id": a.user.student_id if a.user else "N/A",
                 "date": a.appointment_date.isoformat() if a.appointment_date else None,
                 "time": a.appointment_time,
                 "type": a.type,
+                "notes": a.notes,
                 "status": a.status
             }
             for a in appointments
@@ -1547,7 +1636,7 @@ def get_available_slots(
 
     # Parse the date
     try:
-        appointment_date = datetime.strptime(date, "%Y-%m-%d")
+        appointment_date = datetime.strptime(date, "%Y-%m-%d").date()
     except ValueError:
         raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
 
@@ -1593,8 +1682,13 @@ def get_available_slots(
 
     booked_slots = [apt.appointment_time for apt in booked_appointments]
 
+    # Hide slots in the past (earlier dates, or earlier times today)
+    now = datetime.now()
+    all_slots = [slot for slot in all_slots if slot_datetime(appointment_date, slot) > now]
+
     # Filter out booked slots
     available_slots = [slot for slot in all_slots if slot not in booked_slots]
+    booked_slots = [slot for slot in booked_slots if slot in all_slots]
 
     return {
         "doctor_id": doctor_id,
@@ -1899,7 +1993,7 @@ class ChatResponse(BaseModel):
 
 
 @app.post("/chat/", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest):
+def chat_endpoint(request: ChatRequest):
     try:
         from chatbot import ai_reply
 
@@ -1936,10 +2030,12 @@ def get_all_students(
     db: Session = Depends(get_db)
 ):
     """Get all students for doctor's dropdown menus"""
-    if current_user.role != "doctor":
+    if current_user.role not in ("doctor", "admin"):
         raise HTTPException(status_code=403, detail="Only doctors can access this")
 
-    students = db.query(models.User).filter(models.User.role == "student").all()
+    students = db.query(models.User).filter(
+        models.User.role == "student", models.User.is_active == True
+    ).order_by(models.User.full_name).all()
 
     return [
         {
@@ -2170,6 +2266,243 @@ def get_my_referrals(
         })
 
     return result
+
+
+# ---------------------------------------------------------
+# DOCTOR: REFERRALS AND PATIENT RECORDS
+# ---------------------------------------------------------
+@app.get("/doctor/referrals")
+def get_doctor_referrals(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Referrals created by the current doctor"""
+    require_role(current_user, "doctor")
+    doctor = get_doctor_or_404(db, current_user)
+    referrals = db.query(models.Referral).filter(
+        models.Referral.doctor_id == doctor.id
+    ).order_by(models.Referral.created_at.desc()).all()
+    return [
+        {
+            "id": r.id,
+            "specialist_type": r.specialist_type,
+            "reason": r.reason,
+            "priority": r.priority,
+            "notes": r.notes,
+            "status": r.status,
+            "patient_name": r.patient.full_name if r.patient else "Unknown",
+            "patient_id": r.patient.student_id if r.patient else "Unknown",
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in referrals
+    ]
+
+
+class ReferralStatusUpdate(BaseModel):
+    status: str
+
+
+@app.put("/referrals/{referral_id}/status")
+def update_referral_status(
+    referral_id: int,
+    update: ReferralStatusUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    require_role(current_user, "doctor")
+    if update.status not in ("pending", "scheduled", "completed"):
+        raise HTTPException(400, "Status must be pending, scheduled or completed")
+    doctor = get_doctor_or_404(db, current_user)
+    referral = db.query(models.Referral).filter(
+        models.Referral.id == referral_id, models.Referral.doctor_id == doctor.id
+    ).first()
+    if not referral:
+        raise HTTPException(404, "Referral not found")
+    referral.status = update.status
+    db.commit()
+    return {"message": "Referral updated"}
+
+
+@app.delete("/referrals/{referral_id}")
+def delete_referral(
+    referral_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Only the referring doctor can delete a referral"""
+    require_role(current_user, "doctor")
+    doctor = get_doctor_or_404(db, current_user)
+    referral = db.query(models.Referral).filter(
+        models.Referral.id == referral_id, models.Referral.doctor_id == doctor.id
+    ).first()
+    if not referral:
+        raise HTTPException(404, "Referral not found")
+    db.delete(referral)
+    db.commit()
+    return {"message": "Referral deleted"}
+
+
+@app.get("/doctor/patients/{patient_user_id}/records")
+def get_patient_records(
+    patient_user_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """A doctor sees a patient's medical information, prescriptions and visits"""
+    require_role(current_user, "doctor")
+    patient = db.query(models.User).filter(
+        models.User.id == patient_user_id, models.User.role == "student"
+    ).first()
+    if not patient:
+        raise HTTPException(404, "Patient not found")
+    records = db.query(models.MedicalRecord).filter(
+        models.MedicalRecord.user_id == patient.id, models.MedicalRecord.is_active == True
+    ).all()
+    prescriptions = db.query(models.Prescription).filter(
+        models.Prescription.patient_id == patient.id
+    ).order_by(models.Prescription.created_at.desc()).all()
+    visits = db.query(models.Visit).filter(
+        models.Visit.user_id == patient.id
+    ).order_by(models.Visit.visit_date.desc()).limit(5).all()
+    return {
+        "patient": {"id": patient.id, "full_name": patient.full_name, "student_id": patient.student_id,
+                    "email": patient.email, "phone": patient.phone},
+        "records": [{"id": r.id, "type": r.type, "name": r.name, "severity": r.severity,
+                     "description": r.description} for r in records],
+        "prescriptions": [{"medication": p.medication, "dosage": p.dosage, "frequency": p.frequency,
+                           "status": p.status, "doctor_name": p.doctor.name if p.doctor else "Unknown"}
+                          for p in prescriptions],
+        "visits": [{"date": v.visit_date.isoformat(), "diagnosis": v.diagnosis,
+                    "doctor_name": v.doctor.name if v.doctor else "Unknown"} for v in visits],
+    }
+
+
+# ---------------------------------------------------------
+# ADMIN
+# ---------------------------------------------------------
+class AdminStatusUpdate(BaseModel):
+    is_active: bool
+
+
+@app.get("/admin/stats")
+def admin_stats(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_role(current_user, "admin")
+    today = datetime.now().date()
+    count = lambda q: q.count()
+    return {
+        "students": count(db.query(models.User).filter(models.User.role == "student")),
+        "doctors": count(db.query(models.User).filter(models.User.role == "doctor")),
+        "nurses": count(db.query(models.User).filter(models.User.role == "nurse")),
+        "inactive_users": count(db.query(models.User).filter(models.User.is_active == False)),
+        "upcoming_appointments": count(db.query(models.Appointment).filter(
+            models.Appointment.status == "upcoming", models.Appointment.appointment_date >= today)),
+        "appointments_today": count(db.query(models.Appointment).filter(
+            models.Appointment.appointment_date == today, models.Appointment.status != "cancelled")),
+        "active_emergencies": count(db.query(models.EmergencyRequest).filter(
+            models.EmergencyRequest.status == "active")),
+        "prescriptions": count(db.query(models.Prescription)),
+        "referrals": count(db.query(models.Referral)),
+    }
+
+
+@app.get("/admin/users")
+def admin_list_users(
+    role: Optional[str] = None,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_role(current_user, "admin")
+    query = db.query(models.User)
+    if role:
+        query = query.filter(models.User.role == role)
+    users = query.order_by(models.User.role, models.User.full_name).all()
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "full_name": u.full_name,
+            "email": u.email,
+            "student_id": u.student_id,
+            "role": u.role,
+            "department": u.department,
+            "major": u.major,
+            "is_active": u.is_active is not False,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+        }
+        for u in users
+    ]
+
+
+@app.post("/admin/users")
+def admin_create_user(
+    user: UserRegister,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Admin creates a student, doctor or nurse account (same rules as registration)"""
+    require_role(current_user, "admin")
+    result = register(user, db)
+    return {"message": f"{user.role.capitalize()} account created", "user": result["user"]}
+
+
+@app.put("/admin/users/{user_id}/status")
+def admin_set_user_status(
+    user_id: int,
+    update: AdminStatusUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_role(current_user, "admin")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+    if user.id == current_user.id:
+        raise HTTPException(400, "You cannot deactivate your own account")
+    user.is_active = update.is_active
+    # A deactivated doctor no longer appears for booking
+    if user.doctor_profile:
+        user.doctor_profile.is_available = update.is_active
+    db.commit()
+    return {"message": "Account activated" if update.is_active else "Account deactivated"}
+
+
+@app.get("/admin/appointments")
+def admin_list_appointments(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_role(current_user, "admin")
+    appointments = db.query(models.Appointment).order_by(
+        models.Appointment.appointment_date.desc()
+    ).limit(200).all()
+    return [
+        {
+            "id": a.id,
+            "patient_name": a.user.full_name if a.user else "Unknown",
+            "doctor_name": a.doctor.name if a.doctor else "Unknown",
+            "date": a.appointment_date.isoformat() if a.appointment_date else None,
+            "time": a.appointment_time,
+            "type": a.type,
+            "status": a.status,
+        }
+        for a in appointments
+    ]
+
+
+@app.delete("/admin/appointments/{appointment_id}")
+def admin_cancel_appointment(
+    appointment_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_role(current_user, "admin")
+    appointment = db.query(models.Appointment).filter(models.Appointment.id == appointment_id).first()
+    if not appointment:
+        raise HTTPException(404, "Appointment not found")
+    appointment.status = "cancelled"
+    appointment.can_reschedule = False
+    db.commit()
+    return {"message": "Appointment cancelled"}
 
 
 # ---------------------------------------------------------

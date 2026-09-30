@@ -895,7 +895,7 @@
                     
                     <div class="summary-item">
                         <span class="summary-label">Time:</span>
-                        <span class="summary-value" id="summaryTime">03:00 PM</span>
+                        <span class="summary-value" id="summaryTime">Not selected</span>
                     </div>
                     
                     <div class="summary-item">
@@ -951,9 +951,11 @@
 
     <script>
         // Calendar variables
-        let currentDate = new Date(2025, 12, 8); // December 8 2025 (month is 0-indexed)
-        let selectedDate = new Date(2025, 12, 10); // December 10 2025
-        let selectedTime = "03:00 PM";
+        // Start on today's date; no time is pre-selected
+        const _now = new Date();
+        let currentDate = new Date(_now.getFullYear(), _now.getMonth(), 1);
+        let selectedDate = new Date(_now.getFullYear(), _now.getMonth(), _now.getDate());
+        let selectedTime = null;
         let selectedDoctorId = null; // Will be set when doctors are loaded
         let appointmentComment = "";
 
@@ -1156,9 +1158,11 @@
                     selectDate(i);
                 });
                 
-                // Mark some days as unavailable (for demo)
-                if (Math.random() < 0.2) { // 20% chance of being unavailable
+                // Past days cannot be booked
+                const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                if (dayDate < todayStart) {
                     day.classList.add('unavailable');
+                    day.title = 'Past date';
                 }
                 
                 calendar.appendChild(day);
@@ -1226,8 +1230,7 @@
                 timeslotsGrid.innerHTML = '<div style="padding: 20px; text-align: center;">Loading available time slots...</div>';
 
                 // Format date to YYYY-MM-DD for API
-                const formattedDate = selectedDate.toISOString().split('T')[0];
-                console.log('Formatted date:', formattedDate);
+                const formattedDate = formatDateForAPI(selectedDate);
 
                 // Fetch available slots from API
                 const slotsData = await getAvailableSlots(selectedDoctorId, formattedDate);
@@ -1235,6 +1238,9 @@
 
                 // Check if doctor is not available on this day
                 if (slotsData.message) {
+                    selectedTime = null;
+                    document.getElementById('summaryTime').textContent = 'Not selected';
+                    document.querySelectorAll('.working-hours-info').forEach(el => el.remove());
                     timeslotsGrid.innerHTML = `<div style="padding: 20px; text-align: center; color: #ff9800;">${slotsData.message}</div>`;
                     return;
                 }
@@ -1243,8 +1249,15 @@
                 const availableSlots = slotsData.available_slots || [];
                 const bookedSlots = slotsData.booked_slots || [];
 
+                // Drop a previously chosen time that isn't bookable for this doctor/date
+                if (selectedTime && !availableSlots.includes(selectedTime)) {
+                    selectedTime = null;
+                    document.getElementById('summaryTime').textContent = 'Not selected';
+                }
+
                 // Combine available and booked slots to show full schedule
-                const allSlots = [...new Set([...availableSlots, ...bookedSlots])].sort();
+                const toMinutes = t => { const [hm, ap] = t.split(' '); let [h, m] = hm.split(':').map(Number); if (ap === 'PM' && h !== 12) h += 12; if (ap === 'AM' && h === 12) h = 0; return h * 60 + m; };
+                const allSlots = [...new Set([...availableSlots, ...bookedSlots])].sort((a, b) => toMinutes(a) - toMinutes(b));
 
                 console.log('Available slots:', availableSlots.length);
                 console.log('Booked slots:', bookedSlots.length);
@@ -1254,7 +1267,7 @@
                 timeslotsGrid.innerHTML = '';
 
                 if (allSlots.length === 0) {
-                    timeslotsGrid.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">Doctor has no availability set for this day. Please select another date.</div>';
+                    timeslotsGrid.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">No time slots left for this day. Please select another date.</div>';
                     return;
                 }
 
@@ -1289,8 +1302,10 @@
                 }
 
                 // Show working hours info
+                document.querySelectorAll('.working-hours-info').forEach(el => el.remove());
                 if (slotsData.working_hours) {
                     const infoDiv = document.createElement('div');
+                    infoDiv.className = 'working-hours-info';
                     infoDiv.style.cssText = 'padding: 10px; text-align: center; color: #666; font-size: 0.9rem; background: #f8f9fa; border-radius: 5px; margin-top: 10px;';
                     infoDiv.textContent = `Working hours: ${slotsData.working_hours} | Slot duration: ${slotsData.slot_duration} minutes`;
                     timeslotsGrid.parentElement.appendChild(infoDiv);
@@ -1597,12 +1612,15 @@
                             successMessage += `Your reason for appointment has been noted:\n"${comment.substring(0, 150)}${comment.length > 150 ? '...' : ''}"\n\n`;
                         }
 
-                        successMessage += `A confirmation email has been sent to your registered email address.\n\nYou will receive a reminder 24 hours before your appointment.`;
+                        successMessage += `You can see it under Upcoming Appointment on your Dashboard.`;
 
                         alert(successMessage);
 
-                        // Reset form for next booking
+                        // Reset form for next booking and refresh the free slots
                         resetBookingForm();
+                        selectedTime = null;
+                        document.getElementById('summaryTime').textContent = 'Not selected';
+                        updateTimeSlots();
                     } else {
                         alert('❌ Failed to book appointment. Please try again.');
                     }
@@ -1716,10 +1734,6 @@
             document.getElementById('ratingValue').textContent = '0/5';
             document.getElementById('reviewText').value = '';
             
-            // Show success message
-            setTimeout(() => {
-                alert('✅ Your appointment has been scheduled successfully!\n\nYou can view your upcoming appointments in the Dashboard.\n\nWould you like to book another appointment?');
-            }, 500);
         }
 
         function updateSummary() {
@@ -1779,10 +1793,6 @@
     </script>
 
         
-    <script>
-    const API_URL = 'http://localhost:8000';
-    // Le code du widget est dans ChatbotWidget.html
-    </script>
 
     <!-- CHATBOT - Add before </body> in ALL pages -->
     <style>

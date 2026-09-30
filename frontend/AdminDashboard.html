@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CareConnect - Admin Portal</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: linear-gradient(135deg, #f1f8f1 0%, #e8f5e8 100%); color: #333; min-height: 100vh; }
+        header { background: white; box-shadow: 0 2px 15px rgba(0,0,0,0.08); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10; }
+        .logo { font-size: 1.6rem; font-weight: 700; color: #1b5e20; }
+        .logo span { font-size: 0.9rem; font-weight: 600; color: #fff; background: #2e7d32; padding: 0.2rem 0.6rem; border-radius: 12px; margin-left: 0.5rem; vertical-align: middle; }
+        .header-right { display: flex; align-items: center; gap: 1rem; }
+        .admin-name { font-weight: 600; color: #1b5e20; }
+        .logout-btn { background: #d32f2f; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 600; cursor: pointer; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        h1 { color: #1b5e20; font-size: 2rem; margin-bottom: 0.3rem; }
+        .subtitle { color: #666; margin-bottom: 1.5rem; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+        .stat { background: white; border-radius: 12px; padding: 1.2rem; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border-top: 4px solid #4caf50; }
+        .stat .num { font-size: 1.8rem; font-weight: 700; color: #2e7d32; }
+        .stat .label { color: #666; font-size: 0.9rem; margin-top: 0.2rem; }
+        .stat.alert { border-top-color: #d32f2f; }
+        .stat.alert .num { color: #d32f2f; }
+        .card { background: white; border-radius: 15px; padding: 1.5rem; box-shadow: 0 4px 20px rgba(0,0,0,0.06); margin-bottom: 2rem; }
+        .card-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; padding-bottom: 0.8rem; border-bottom: 2px solid #e8f5e8; }
+        .card-header h2 { color: #1b5e20; font-size: 1.3rem; }
+        .tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+        .tab { padding: 0.45rem 1rem; border: 2px solid #c8e6c9; background: white; color: #2e7d32; border-radius: 20px; cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+        .tab.active { background: #2e7d32; border-color: #2e7d32; color: white; }
+        .toolbar { display: flex; gap: 0.7rem; flex-wrap: wrap; margin-bottom: 1rem; }
+        .search { flex: 1; min-width: 200px; padding: 0.6rem 0.9rem; border: 2px solid #e8f5e8; border-radius: 8px; font-size: 0.95rem; }
+        .search:focus { outline: none; border-color: #4caf50; }
+        .btn { padding: 0.55rem 1rem; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.9rem; }
+        .btn-primary { background: #2e7d32; color: white; }
+        .btn-primary:hover { background: #1b5e20; }
+        .btn-danger { background: #fdecea; color: #c62828; }
+        .btn-danger:hover { background: #c62828; color: white; }
+        .btn-success { background: #e8f5e9; color: #2e7d32; }
+        .btn-success:hover { background: #2e7d32; color: white; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.93rem; }
+        th { text-align: left; color: #1b5e20; background: #f1f8f1; padding: 0.7rem; white-space: nowrap; }
+        td { padding: 0.7rem; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+        tr:hover td { background: #fafffa; }
+        .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.78rem; font-weight: 600; text-transform: capitalize; }
+        .role-student { background: #e3f2fd; color: #1565c0; }
+        .role-doctor { background: #e8f5e9; color: #2e7d32; }
+        .role-nurse { background: #fff3e0; color: #e65100; }
+        .role-admin { background: #f3e5f5; color: #6a1b9a; }
+        .status-active, .status-upcoming { background: #e8f5e9; color: #2e7d32; }
+        .status-inactive, .status-cancelled { background: #fdecea; color: #c62828; }
+        .status-completed { background: #eceff1; color: #546e7a; }
+        .muted { color: #999; font-size: 0.85rem; }
+        .empty { text-align: center; color: #999; padding: 2rem; }
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 100; align-items: center; justify-content: center; padding: 1rem; }
+        .modal.open { display: flex; }
+        .modal-content { background: white; border-radius: 15px; padding: 1.8rem; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; }
+        .modal-content h2 { color: #1b5e20; margin-bottom: 1rem; }
+        .form-row { margin-bottom: 0.9rem; }
+        .form-row label { display: block; font-weight: 600; color: #333; margin-bottom: 0.3rem; font-size: 0.9rem; }
+        .form-row input, .form-row select { width: 100%; padding: 0.6rem 0.8rem; border: 2px solid #e8f5e8; border-radius: 8px; font-size: 0.95rem; }
+        .form-row input:focus, .form-row select:focus { outline: none; border-color: #4caf50; }
+        .form-actions { display: flex; justify-content: flex-end; gap: 0.7rem; margin-top: 1.2rem; }
+        .role-fields { display: none; }
+        .role-fields.show { display: block; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">CareConnect <span>Admin</span></div>
+        <div class="header-right">
+            <span class="admin-name" id="adminName">Admin</span>
+            <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <h1>Admin Portal</h1>
+        <p class="subtitle">Manage accounts and monitor activity at the campus health center.</p>
+
+        <div class="stats" id="stats">
+            <div class="stat"><div class="num" id="sStudents">–</div><div class="label">Students</div></div>
+            <div class="stat"><div class="num" id="sDoctors">–</div><div class="label">Doctors</div></div>
+            <div class="stat"><div class="num" id="sNurses">–</div><div class="label">Nurses</div></div>
+            <div class="stat"><div class="num" id="sToday">–</div><div class="label">Appointments Today</div></div>
+            <div class="stat"><div class="num" id="sUpcoming">–</div><div class="label">Upcoming Appointments</div></div>
+            <div class="stat alert"><div class="num" id="sEmergencies">–</div><div class="label">Active Emergencies</div></div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>👥 Users</h2>
+                <div class="tabs" id="roleTabs">
+                    <button class="tab active" data-role="">All</button>
+                    <button class="tab" data-role="student">Students</button>
+                    <button class="tab" data-role="doctor">Doctors</button>
+                    <button class="tab" data-role="nurse">Nurses</button>
+                    <button class="tab" data-role="admin">Admins</button>
+                </div>
+            </div>
+            <div class="toolbar">
+                <input class="search" id="userSearch" placeholder="Search by name, username, email or ID...">
+                <button class="btn btn-primary" onclick="openCreateModal()">+ Create Account</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>ID</th><th>Role</th><th>Status</th><th></th></tr></thead>
+                    <tbody id="usersBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>📅 Appointments</h2>
+                <div class="tabs" id="apptTabs">
+                    <button class="tab active" data-status="upcoming">Upcoming</button>
+                    <button class="tab" data-status="completed">Completed</button>
+                    <button class="tab" data-status="cancelled">Cancelled</button>
+                    <button class="tab" data-status="">All</button>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Date</th><th>Time</th><th>Student</th><th>Doctor</th><th>Type</th><th>Status</th><th></th></tr></thead>
+                    <tbody id="apptBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create account modal -->
+    <div class="modal" id="createModal">
+        <div class="modal-content">
+            <h2>Create Account</h2>
+            <form id="createForm">
+                <div class="form-row">
+                    <label>Role</label>
+                    <select id="cRole">
+                        <option value="doctor">Doctor</option>
+                        <option value="nurse">Nurse</option>
+                        <option value="student">Student</option>
+                    </select>
+                </div>
+                <div class="form-row"><label>Full name</label><input id="cFullName" required></div>
+                <div class="form-row"><label>Username</label><input id="cUsername" required></div>
+                <div class="form-row"><label>Temporary password (min. 8 characters)</label><input id="cPassword" type="text" minlength="8" required></div>
+                <div class="form-row"><label>Phone (optional)</label><input id="cPhone"></div>
+
+                <div class="role-fields" data-for="doctor">
+                    <div class="form-row"><label>License number</label><input id="cLicense"></div>
+                    <div class="form-row"><label>Specialization</label><input id="cSpecialization" placeholder="e.g. General Practitioner"></div>
+                </div>
+                <div class="role-fields" data-for="nurse">
+                    <div class="form-row"><label>Nursing license</label><input id="cNurseLicense"></div>
+                    <div class="form-row"><label>Department</label><input id="cNurseDept" placeholder="e.g. General Care"></div>
+                    <div class="form-row"><label>Shift</label>
+                        <select id="cShift"><option value="morning">Morning</option><option value="afternoon">Afternoon</option><option value="night">Night</option></select>
+                    </div>
+                </div>
+                <div class="role-fields" data-for="student">
+                    <div class="form-row"><label>Student ID</label><input id="cStudentId"></div>
+                    <div class="form-row"><label>School</label>
+                        <select id="cDept"><option value="SSE">SSE</option><option value="SBA">SBA</option><option value="SSAH">SSAH</option></select>
+                    </div>
+                    <div class="form-row"><label>Major</label><input id="cMajor"></div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-danger" onclick="closeCreateModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000';
+        let users = [];
+        let appointments = [];
+        let roleFilter = '';
+        let apptFilter = 'upcoming';
+
+        const token = sessionStorage.getItem('token');
+        if (!token) window.location.href = 'Login.html';
+        else if (sessionStorage.getItem('role') !== 'admin') {
+            alert('Access denied. This page is for administrators only.');
+            window.location.href = 'Login.html';
+        }
+        document.getElementById('adminName').textContent = sessionStorage.getItem('fullName') || 'Admin';
+
+        function esc(t) { const d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+        function logout() { sessionStorage.clear(); window.location.href = 'Login.html'; }
+        function formatDate(iso) {
+            if (!iso) return 'N/A';
+            const [y, m, d] = iso.split('-').map(Number);
+            return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        async function api(path, options = {}) {
+            const response = await fetch(API_URL + path, {
+                ...options,
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ...(options.headers || {}) }
+            });
+            if (response.status === 401) { sessionStorage.clear(); window.location.href = 'Login.html'; return null; }
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || 'Request failed');
+            return data;
+        }
+
+        // ---------- Stats ----------
+        async function loadStats() {
+            try {
+                const s = await api('/admin/stats');
+                document.getElementById('sStudents').textContent = s.students;
+                document.getElementById('sDoctors').textContent = s.doctors;
+                document.getElementById('sNurses').textContent = s.nurses;
+                document.getElementById('sToday').textContent = s.appointments_today;
+                document.getElementById('sUpcoming').textContent = s.upcoming_appointments;
+                document.getElementById('sEmergencies').textContent = s.active_emergencies;
+            } catch (e) { console.error(e); }
+        }
+
+        // ---------- Users ----------
+        async function loadUsers() {
+            try {
+                users = await api('/admin/users');
+                renderUsers();
+            } catch (e) {
+                document.getElementById('usersBody').innerHTML = `<tr><td colspan="7" class="empty">${esc(e.message)}</td></tr>`;
+            }
+        }
+
+        function renderUsers() {
+            const q = document.getElementById('userSearch').value.trim().toLowerCase();
+            const me = sessionStorage.getItem('username');
+            const list = users.filter(u => (!roleFilter || u.role === roleFilter) &&
+                (!q || [u.full_name, u.username, u.email, u.student_id].some(v => (v || '').toLowerCase().includes(q))));
+            if (!list.length) {
+                document.getElementById('usersBody').innerHTML = '<tr><td colspan="7" class="empty">No users found</td></tr>';
+                return;
+            }
+            document.getElementById('usersBody').innerHTML = list.map(u => `
+                <tr>
+                    <td><strong>${esc(u.full_name)}</strong>${u.major ? `<div class="muted">${esc(u.major)}</div>` : ''}</td>
+                    <td>${esc(u.username)}</td>
+                    <td>${esc(u.email)}</td>
+                    <td>${esc(u.student_id)}</td>
+                    <td><span class="badge role-${esc(u.role)}">${esc(u.role)}</span></td>
+                    <td><span class="badge status-${u.is_active ? 'active' : 'inactive'}">${u.is_active ? 'Active' : 'Deactivated'}</span></td>
+                    <td style="text-align:right;">${u.username === me ? '<span class="muted">You</span>' :
+                        u.is_active
+                            ? `<button class="btn btn-danger" onclick="setStatus(${u.id}, false, '${esc(u.full_name).replace(/'/g, '&#39;')}')">Deactivate</button>`
+                            : `<button class="btn btn-success" onclick="setStatus(${u.id}, true, '${esc(u.full_name).replace(/'/g, '&#39;')}')">Activate</button>`}
+                    </td>
+                </tr>`).join('');
+        }
+
+        async function setStatus(id, active, name) {
+            const msg = active
+                ? `Reactivate ${name}'s account?`
+                : `Deactivate ${name}'s account?\n\nThey will no longer be able to log in. A deactivated doctor is hidden from appointment booking.`;
+            if (!confirm(msg)) return;
+            try {
+                await api(`/admin/users/${id}/status`, { method: 'PUT', body: JSON.stringify({ is_active: active }) });
+                await Promise.all([loadUsers(), loadStats()]);
+            } catch (e) { alert('❌ ' + e.message); }
+        }
+
+        document.querySelectorAll('#roleTabs .tab').forEach(tab => tab.addEventListener('click', () => {
+            document.querySelectorAll('#roleTabs .tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            roleFilter = tab.dataset.role;
+            renderUsers();
+        }));
+        document.getElementById('userSearch').addEventListener('input', renderUsers);
+
+        // ---------- Create account ----------
+        function showRoleFields() {
+            const role = document.getElementById('cRole').value;
+            document.querySelectorAll('.role-fields').forEach(el => el.classList.toggle('show', el.dataset.for === role));
+        }
+        function openCreateModal() { document.getElementById('createForm').reset(); showRoleFields(); document.getElementById('createModal').classList.add('open'); }
+        function closeCreateModal() { document.getElementById('createModal').classList.remove('open'); }
+        document.getElementById('cRole').addEventListener('change', showRoleFields);
+        document.getElementById('createModal').addEventListener('click', e => { if (e.target.id === 'createModal') closeCreateModal(); });
+
+        document.getElementById('createForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            const val = id => document.getElementById(id).value.trim();
+            const role = val('cRole');
+            const body = {
+                role,
+                full_name: val('cFullName'),
+                username: val('cUsername'),
+                password: document.getElementById('cPassword').value,
+                phone: val('cPhone') || null,
+                student_id: role === 'student' ? val('cStudentId') : 'auto',
+            };
+            if (role === 'doctor') Object.assign(body, { license_number: val('cLicense'), specialization: val('cSpecialization') });
+            if (role === 'nurse') Object.assign(body, { nursing_license: val('cNurseLicense'), nurse_department: val('cNurseDept'), shift: val('cShift') });
+            if (role === 'student') Object.assign(body, { department: val('cDept'), major: val('cMajor') });
+            if (body.password.length < 8) { alert('❌ The password must be at least 8 characters.'); return; }
+            if (role === 'student' && !body.student_id) { alert('❌ Please enter a student ID.'); return; }
+            try {
+                const res = await api('/admin/users', { method: 'POST', body: JSON.stringify(body) });
+                alert(`✅ ${res.message}\n\nUsername: ${body.username}\nEmail: ${res.user.email}`);
+                closeCreateModal();
+                await Promise.all([loadUsers(), loadStats()]);
+            } catch (err) { alert('❌ ' + err.message); }
+        });
+
+        // ---------- Appointments ----------
+        async function loadAppointments() {
+            try {
+                appointments = await api('/admin/appointments');
+                renderAppointments();
+            } catch (e) {
+                document.getElementById('apptBody').innerHTML = `<tr><td colspan="7" class="empty">${esc(e.message)}</td></tr>`;
+            }
+        }
+
+        function renderAppointments() {
+            const list = appointments.filter(a => !apptFilter || a.status === apptFilter);
+            if (apptFilter === 'upcoming') list.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+            if (!list.length) {
+                document.getElementById('apptBody').innerHTML = '<tr><td colspan="7" class="empty">No appointments</td></tr>';
+                return;
+            }
+            document.getElementById('apptBody').innerHTML = list.map(a => `
+                <tr>
+                    <td>${formatDate(a.date)}</td>
+                    <td>${esc(a.time)}</td>
+                    <td>${esc(a.patient_name)}</td>
+                    <td>${esc(a.doctor_name)}</td>
+                    <td>${esc(a.type)}</td>
+                    <td><span class="badge status-${esc(a.status)}">${esc(a.status)}</span></td>
+                    <td style="text-align:right;">${a.status === 'upcoming' ? `<button class="btn btn-danger" onclick="cancelAppointment(${a.id})">Cancel</button>` : ''}</td>
+                </tr>`).join('');
+        }
+
+        async function cancelAppointment(id) {
+            if (!confirm('Cancel this appointment? The slot becomes available again.')) return;
+            try {
+                await api(`/admin/appointments/${id}`, { method: 'DELETE' });
+                await Promise.all([loadAppointments(), loadStats()]);
+            } catch (e) { alert('❌ ' + e.message); }
+        }
+
+        document.querySelectorAll('#apptTabs .tab').forEach(tab => tab.addEventListener('click', () => {
+            document.querySelectorAll('#apptTabs .tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            apptFilter = tab.dataset.status;
+            renderAppointments();
+        }));
+
+        loadStats();
+        loadUsers();
+        loadAppointments();
+    </script>
+</body>
+</html>

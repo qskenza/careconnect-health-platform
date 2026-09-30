@@ -166,6 +166,51 @@ def seed_db():
         # ✅ FIX: Commit doctors first so they get IDs
         db.commit()
         print("✅ Doctors created successfully")
+
+        # Login accounts for the default doctors (so their portals show real bookings)
+        doctor_accounts = [
+            ("sarah.chen", "D0000001", doctors[0]),
+            ("emily.carter", "D0000002", doctors[1]),
+            ("elena.rodriguez", "D0000003", doctors[2]),
+        ]
+        for username, staff_id, doctor in doctor_accounts:
+            account = models.User(
+                username=username,
+                email=doctor.email,
+                password_hash=hash_password("doctor123"),
+                full_name=doctor.name,
+                student_id=staff_id,
+                institution="Al Akhawayn University",
+                major=doctor.specialty,
+                role="doctor",
+            )
+            db.add(account)
+            db.flush()
+            doctor.user_id = account.id
+
+        # Default nurse account
+        nurse_user = models.User(
+            username="nurse.amina",
+            email="amina.benali@aui.ma",
+            password_hash=hash_password("nurse123"),
+            full_name="Amina Benali",
+            student_id="N0000001",
+            institution="Al Akhawayn University",
+            role="nurse",
+        )
+        db.add(nurse_user)
+        db.flush()
+        db.add(models.Nurse(
+            user_id=nurse_user.id,
+            name="Amina Benali",
+            license_number="NL-0001",
+            department="General Care",
+            email="amina.benali@aui.ma",
+            avatar="AB",
+            shift="morning",
+        ))
+        db.commit()
+        print("✅ Staff accounts created")
         
         # Now create availability schedules with valid doctor IDs
         print("📅 Creating default doctor availability schedules...")
@@ -263,7 +308,8 @@ def seed_db():
         
         db.commit()
         print("✅ Database seeded successfully")
-        print("📧 Alexandra's email: a.miller@aui.ma")
+        print("👤 Demo accounts: alexandra / password123 (student), sarah.chen / doctor123 (doctor),")
+        print("   nurse.amina / nurse123 (nurse), admin / admin123 (admin)")
         
     except Exception as e:
         print(f"❌ Error seeding database: {e}")

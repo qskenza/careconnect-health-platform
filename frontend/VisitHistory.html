@@ -787,7 +787,8 @@
         }
 
         function formatVisitDate(dateString) {
-            const date = new Date(dateString);
+            const [y, m, d] = String(dateString).split('-').map(Number);
+            const date = (y && m && d) ? new Date(y, m - 1, d) : new Date(dateString);
             return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
         }
 
@@ -805,6 +806,12 @@
                 return;
             }
 
+            // Upcoming first (soonest first), then past visits (most recent first)
+            allVisits.sort((a, b) => {
+                const up = v => v.status === 'upcoming' ? 0 : 1;
+                if (up(a) !== up(b)) return up(a) - up(b);
+                return up(a) === 0 ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date);
+            });
             container.innerHTML = allVisits.map(visit => {
                 const statusClass = visit.status === 'upcoming' ? 'status-upcoming' :
                                    visit.status === 'completed' ? 'status-completed' : 'status-cancelled';
@@ -840,7 +847,7 @@
                         </div>
                         ` : ''}
                         <div class="visit-actions">
-                            <button class="action-btn view-details-btn" onclick="showVisitDetails(${visit.id})">View Full Report</button>
+                            <button class="action-btn view-details-btn" onclick="showVisitDetails('${visit.id}')">View Full Report</button>
                         </div>
                     </div>
                 `;
@@ -851,7 +858,7 @@
         }
 
         function showVisitDetails(visitId) {
-            const visit = allVisits.find(v => v.id === visitId);
+            const visit = allVisits.find(v => String(v.id) === String(visitId));
             if (!visit) return;
 
             showFullReport(
@@ -1031,9 +1038,6 @@
         
     </script>
     
-    <script>
-    const API_URL = 'http://localhost:8000';
-    </script>
 
     <!-- CHATBOT -->
     <style>

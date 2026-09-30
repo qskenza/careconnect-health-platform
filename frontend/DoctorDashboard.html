@@ -742,12 +742,12 @@
         <div class="stat-divider"></div>
         <div class="stat-item">
             <div class="stat-number" id="statPendingPrescriptions">0</div>
-            <div class="stat-label">Pending Prescriptions</div>
+            <div class="stat-label">Active Prescriptions</div>
         </div>
         <div class="stat-divider"></div>
         <div class="stat-item">
-            <div class="stat-number">42m</div>
-            <div class="stat-label">Average Wait Time</div>
+            <div class="stat-number" id="statReferrals">0</div>
+            <div class="stat-label">Referrals</div>
         </div>
         <div class="stat-divider"></div>
         <div class="stat-item">
@@ -779,7 +779,7 @@
             <!-- Profile Tabs -->
             <div class="profile-tabs">
                 <button class="tab-btn active" data-tab="personal">Profile Information</button>
-                <button class="tab-btn" data-tab="schedule">Today's Schedule</button>
+                <button class="tab-btn" data-tab="schedule">Upcoming Appointments</button>
                 <button class="tab-btn" data-tab="availability">Availability</button>
                 <button class="tab-btn" data-tab="experience">Professional Experience</button>
                 <button class="tab-btn" data-tab="quickactions">Quick Actions</button>
@@ -819,7 +819,7 @@
             </div>
 
             <div class="tab-content" id="schedule-tab">
-                <h3 class="tab-title">Today's Schedule</h3>
+                <h3 class="tab-title">Upcoming Appointments</h3>
                 <div id="scheduleContainer">
                     <div class="loading">
                         <div class="loading-spinner"></div>
@@ -1102,6 +1102,9 @@
             <div class="queue-header">
                 <h2 class="section-title">💊 My Prescriptions</h2>
                 <div class="queue-actions">
+                    <button class="queue-btn call-next-btn" onclick="openPrescriptionModal()">
+                        + New Prescription
+                    </button>
                     <button class="queue-btn refresh-btn" onclick="loadDoctorPrescriptions()">
                         Refresh
                     </button>
@@ -1115,6 +1118,40 @@
                 </div>
             </div>
         </section>
+
+        <!-- Referral Management -->
+        <section class="queue-section" style="margin-top: 2rem;">
+            <div class="queue-header">
+                <h2 class="section-title">📋 My Referrals</h2>
+                <div class="queue-actions">
+                    <button class="queue-btn call-next-btn" onclick="openReferralModal()">
+                        + New Referral
+                    </button>
+                    <button class="queue-btn call-next-btn" onclick="openMedicalRecordModal()">
+                        + Medical Record
+                    </button>
+                    <button class="queue-btn refresh-btn" onclick="loadDoctorReferrals()">
+                        Refresh
+                    </button>
+                </div>
+            </div>
+
+            <div id="doctorReferralsContainer">
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <p>Loading referrals...</p>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Patient Records Modal -->
+    <div id="patientRecordsModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="modal-close" onclick="document.getElementById('patientRecordsModal').style.display='none'">&times;</span>
+            <h2>🩺 Patient Records</h2>
+            <div id="patientRecordsBody"></div>
+        </div>
     </div>
 
     <!-- Prescription Modal -->
@@ -1328,8 +1365,9 @@
             // Load schedule
             await loadSchedule();
 
-            // Load prescriptions
+            // Load prescriptions and referrals
             await loadDoctorPrescriptions();
+            await loadDoctorReferrals();
 
             // Initialize tabs
             initializeTabs();
@@ -1391,11 +1429,11 @@
             
             // Welcome message
             document.getElementById('welcomeMessage').textContent = 
-                `Welcome back, Dr. ${fullName.split(' ').pop()}. Here's your overview for today.`;
+                `Welcome back, Dr. ${fullName.split(' ').pop()}. Here's your overview.`;
             
             // Profile section
             document.getElementById('profileAvatar').textContent = initials;
-            document.getElementById('profileName').textContent = `Dr. ${fullName}`;
+            document.getElementById('profileName').textContent = /^dr\.?\s/i.test(fullName) ? fullName : `Dr. ${fullName}`;
             document.getElementById('profileDetails').textContent = 
                 `${specialty} • ID: ${data.student_id || 'N/A'}`;
             document.getElementById('profileLicense').textContent = 
@@ -1427,14 +1465,17 @@
                 
                 if (response.ok) {
                     const data = await response.json();
-                    displaySchedule(data.appointments || []);
-                    displayPatientQueue(data.appointments || []);
+                    const appointments = data.appointments || [];
+                    const today = localISODate(new Date());
+                    const weekEnd = localISODate(new Date(Date.now() + 7 * 86400000));
+                    const todays = appointments.filter(a => a.date === today);
+                    displaySchedule(appointments);
+                    displayPatientQueue(todays);
                     
                     // Update stats
-                    document.getElementById('statPatientsToday').textContent = 
-                        data.appointments ? data.appointments.length : 0;
-                    document.getElementById('statAppointmentsWeek').textContent = 
-                        data.appointments ? data.appointments.length : 0;
+                    document.getElementById('statPatientsToday').textContent = todays.length;
+                    document.getElementById('statAppointmentsWeek').textContent =
+                        appointments.filter(a => a.date >= today && a.date <= weekEnd).length;
                 } else {
                     // Show empty state
                     displaySchedule([]);
@@ -1457,9 +1498,9 @@
             if (!appointments || appointments.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
-                        <p>📅 No appointments scheduled for today</p>
+                        <p>📅 No upcoming appointments</p>
                         <p style="font-size: 0.9rem; margin-top: 0.5rem;">
-                            Your schedule is clear. Enjoy your day!
+                            Appointments booked by students will appear here.
                         </p>
                     </div>
                 `;
@@ -1467,23 +1508,26 @@
             }
             
             let html = '<div class="schedule-list">';
+            const today = localISODate(new Date());
             
             appointments.forEach(apt => {
-                const statusClass = apt.status === 'upcoming' ? 'status-confirmed' : 'status-waiting';
+                const isToday = apt.date === today;
+                const dateLabel = isToday ? 'Today' : formatISODate(apt.date);
                 html += `
                     <div class="schedule-item" data-appointment-id="${apt.id}">
                         <div class="schedule-time">
-                            <span class="time-badge">${apt.time || 'TBD'}</span>
-                            <span class="appointment-status ${statusClass}">${apt.status || 'Scheduled'}</span>
+                            <span class="time-badge">${escHtml(dateLabel)} • ${escHtml(apt.time || 'TBD')}</span>
+                            <span class="appointment-status status-confirmed">${isToday ? 'Today' : 'Upcoming'}</span>
                         </div>
-                        <div class="patient-name">${apt.patient_name || 'Patient'}</div>
-                        <div class="appointment-type">${apt.type || 'General Consultation'}</div>
+                        <div class="patient-name">${escHtml(apt.patient_name || 'Patient')} <span style="font-weight: 400; color: #777; font-size: 0.85rem;">(ID ${escHtml(apt.patient_id || '')})</span></div>
+                        <div class="appointment-type">${escHtml(apt.type || 'General Consultation')}</div>
+                        ${apt.notes ? `<div style="color: #555; font-size: 0.9rem; margin: 0.3rem 0;"><strong>Reason:</strong> ${escHtml(apt.notes)}</div>` : ''}
                         <div class="appointment-actions">
-                            <button class="action-btn start-btn" onclick="startConsultation('${apt.patient_name}')">
-                                Start Consultation
+                            <button class="action-btn start-btn" onclick="viewPatientRecords(${apt.patient_user_id})">
+                                Patient Records
                             </button>
-                            <button class="action-btn reschedule-btn" onclick="rescheduleAppointment(${apt.id})">
-                                Reschedule
+                            <button class="action-btn reschedule-btn" onclick="completeAppointment(${apt.id})">
+                                Mark as Completed
                             </button>
                         </div>
                     </div>
@@ -1536,8 +1580,8 @@
                                 </div>
                             </div>
                         </td>
-                        <td>${apt.type || 'General Consultation'}</td>
-                        <td>${apt.time || 'TBD'}</td>
+                        <td>${escHtml(apt.type || 'General Consultation')}</td>
+                        <td>${escHtml(apt.time || 'TBD')}</td>
                         <td><span class="priority-normal">${apt.status || 'Waiting'}</span></td>
                     </tr>
                 `;
@@ -1703,6 +1747,123 @@
             window.location.href = 'Login.html';
         }
 
+        function escHtml(t) { const d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+        function localISODate(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+        function formatISODate(iso) {
+            if (!iso) return 'N/A';
+            const [y, m, d] = iso.split('-').map(Number);
+            return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        }
+
+        async function completeAppointment(appointmentId) {
+            const diagnosis = prompt('Diagnosis for this visit (it will appear in the student\'s visit history):', 'General Consultation');
+            if (diagnosis === null) return;
+            const notes = prompt('Visit notes (optional):', '') || '';
+            try {
+                const params = new URLSearchParams({ diagnosis: diagnosis.trim() || 'General Consultation', notes });
+                const response = await fetch(`${API_URL}/appointments/${appointmentId}/complete?${params}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.detail || 'Failed to complete appointment');
+                alert('✅ Visit completed. It now appears in the student\'s visit history.');
+                loadSchedule();
+            } catch (error) {
+                alert(`❌ ${error.message}`);
+            }
+        }
+
+        async function viewPatientRecords(patientUserId) {
+            const modal = document.getElementById('patientRecordsModal');
+            const body = document.getElementById('patientRecordsBody');
+            body.innerHTML = '<p>Loading...</p>';
+            modal.style.display = 'block';
+            try {
+                const response = await fetch(`${API_URL}/doctor/patients/${patientUserId}/records`, {
+                    headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.detail || 'Failed to load records');
+                const group = (type, title) => {
+                    const items = data.records.filter(r => r.type === type);
+                    return `<h4 style="color:#2e7d32;margin:1rem 0 0.4rem;">${title}</h4>` + (items.length
+                        ? items.map(r => `<div style="padding:0.4rem 0;border-bottom:1px solid #eee;">${escHtml(r.name)}${r.severity ? ` <span style="color:#e65100;font-size:0.85rem;">(${escHtml(r.severity)})</span>` : ''}${r.description ? `<div style="color:#777;font-size:0.85rem;">${escHtml(r.description)}</div>` : ''}</div>`).join('')
+                        : '<div style="color:#999;">None recorded</div>');
+                };
+                body.innerHTML = `
+                    <p><strong>${escHtml(data.patient.full_name)}</strong> • ID ${escHtml(data.patient.student_id)} • ${escHtml(data.patient.email)}</p>
+                    ${group('allergy', 'Allergies')}
+                    ${group('medication', 'Medications')}
+                    ${group('condition', 'Conditions')}
+                    <h4 style="color:#2e7d32;margin:1rem 0 0.4rem;">Prescriptions</h4>
+                    ${data.prescriptions.length ? data.prescriptions.map(p => `<div style="padding:0.4rem 0;border-bottom:1px solid #eee;">${escHtml(p.medication)} ${escHtml(p.dosage)}, ${escHtml(p.frequency)} <span style="color:#777;font-size:0.85rem;">(${escHtml(p.doctor_name)}, ${escHtml(p.status)})</span></div>`).join('') : '<div style="color:#999;">None</div>'}
+                    <h4 style="color:#2e7d32;margin:1rem 0 0.4rem;">Recent Visits</h4>
+                    ${data.visits.length ? data.visits.map(v => `<div style="padding:0.4rem 0;border-bottom:1px solid #eee;">${formatISODate(v.date)}: ${escHtml(v.diagnosis || '')} <span style="color:#777;font-size:0.85rem;">(${escHtml(v.doctor_name)})</span></div>`).join('') : '<div style="color:#999;">None</div>'}
+                `;
+            } catch (error) {
+                body.innerHTML = `<p style="color:#d32f2f;">${escHtml(error.message)}</p>`;
+            }
+        }
+
+        // ============================================
+        // REFERRALS
+        // ============================================
+        async function loadDoctorReferrals() {
+            const container = document.getElementById('doctorReferralsContainer');
+            try {
+                const response = await fetch(`${API_URL}/doctor/referrals`, {
+                    headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+                });
+                if (!response.ok) throw new Error('Failed to load referrals');
+                const referrals = await response.json();
+                document.getElementById('statReferrals').textContent = referrals.filter(r => r.status !== 'completed').length;
+                if (!referrals.length) {
+                    container.innerHTML = '<p style="color: #999; text-align: center; padding: 2rem;">No referrals created yet.</p>';
+                    return;
+                }
+                const colors = { routine: '#4caf50', urgent: '#ff9800', emergency: '#d32f2f' };
+                container.innerHTML = '<div style="display: grid; gap: 1rem;">' + referrals.map(r => `
+                    <div class="schedule-day-card" style="border-left: 4px solid ${colors[r.priority] || '#4caf50'};">
+                        <div class="day-info">
+                            <div class="day-name">${escHtml(r.specialist_type)} <span style="font-size:0.8rem;color:${colors[r.priority] || '#4caf50'};text-transform:uppercase;">${escHtml(r.priority)}</span></div>
+                            <div class="day-hours">Patient: <strong>${escHtml(r.patient_name)}</strong> (ID ${escHtml(r.patient_id)})</div>
+                            <div class="day-hours">Reason: ${escHtml(r.reason)}</div>
+                            ${r.notes ? `<div class="day-hours">Notes: ${escHtml(r.notes)}</div>` : ''}
+                            <div class="day-hours" style="color:#999;">Created ${r.created_at ? new Date(r.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A'}</div>
+                        </div>
+                        <div style="display:flex;gap:0.5rem;align-items:center;">
+                            <select onchange="updateReferralStatus(${r.id}, this.value)" style="padding:0.4rem;border-radius:6px;border:1px solid #ccc;">
+                                ${['pending', 'scheduled', 'completed'].map(s => `<option value="${s}" ${s === r.status ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`).join('')}
+                            </select>
+                            <button class="delete-schedule-btn" onclick="deleteReferral(${r.id})">Delete</button>
+                        </div>
+                    </div>`).join('') + '</div>';
+            } catch (error) {
+                container.innerHTML = `<p style="color:#d32f2f;text-align:center;padding:2rem;">${escHtml(error.message)}</p>`;
+            }
+        }
+
+        async function updateReferralStatus(id, status) {
+            const response = await fetch(`${API_URL}/referrals/${id}/status`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            if (!response.ok) alert('❌ Could not update the referral');
+            loadDoctorReferrals();
+        }
+
+        async function deleteReferral(id) {
+            if (!confirm('Delete this referral? The student will no longer see it.')) return;
+            const response = await fetch(`${API_URL}/referrals/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+            });
+            if (!response.ok) alert('❌ Could not delete the referral');
+            loadDoctorReferrals();
+        }
+
     </script>
     <script>
         // Add these functions to DoctorDashboard.html
@@ -1719,7 +1880,7 @@
                 }
 
                 const availability = await response.json();
-                displaySchedule(availability);
+                displayAvailability(availability);
 
             } catch (error) {
                 console.error('Error loading schedule:', error);
@@ -1731,7 +1892,7 @@
             }
         }
 
-        function displaySchedule(availability) {
+        function displayAvailability(availability) {
             const container = document.getElementById('currentSchedule');
             const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
             
@@ -2220,8 +2381,9 @@
                     throw new Error(data.detail || 'Failed to create referral');
                 }
 
-                alert('✅ Referral created successfully!');
+                alert('✅ Referral created successfully! The student can now see it on their dashboard.');
                 closeReferralModal();
+                loadDoctorReferrals();
             } catch (error) {
                 console.error('Error:', error);
                 alert(`❌ Error: ${error.message}`);
@@ -2276,7 +2438,7 @@
 
         // Close modals when clicking outside
         window.onclick = function(event) {
-            const modals = ['prescriptionModal', 'referralModal', 'medicalRecordModal'];
+            const modals = ['prescriptionModal', 'referralModal', 'medicalRecordModal', 'patientRecordsModal'];
             modals.forEach(modalId => {
                 const modal = document.getElementById(modalId);
                 if (event.target === modal) {
@@ -2308,6 +2470,8 @@
 
         function displayDoctorPrescriptions(prescriptions) {
             const container = document.getElementById('doctorPrescriptionsContainer');
+            document.getElementById('statPendingPrescriptions').textContent =
+                (prescriptions || []).filter(p => p.status === 'active').length;
 
             if (!prescriptions || prescriptions.length === 0) {
                 container.innerHTML = '<p style="color: #999; text-align: center; padding: 2rem;">No prescriptions created yet.</p>';

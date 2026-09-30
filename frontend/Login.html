@@ -580,7 +580,7 @@
         function validateUsername(username) {
             const studentIdRegex = /^S\d+$/;
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            const usernameRegex = /^[a-zA-Z0-9_]{3,20}$/;
+            const usernameRegex = /^[a-zA-Z0-9_.-]{3,30}$/;
             
             return studentIdRegex.test(username) || 
                    emailRegex.test(username) || 
@@ -652,11 +652,14 @@
                         sessionStorage.setItem('studentId', data.user.student_id);
                         sessionStorage.setItem('email', data.user.email);
                         sessionStorage.setItem('role', data.user.role);
+                        sessionStorage.setItem('department', data.user.department || '');
                         
                         alert('✅ Login successful!');
                         
                         // Role-based redirect
-                        if (data.user.role === 'doctor') {
+                        if (data.user.role === 'admin') {
+                            window.location.href = 'AdminDashboard.html';
+                        } else if (data.user.role === 'doctor') {
                             window.location.href = 'DoctorDashboard.html';
                         } else if (data.user.role === 'nurse') {
                             window.location.href = 'NurseDashboard.html';
@@ -698,21 +701,9 @@
         // Signup link
         document.querySelector('.signup-link').addEventListener('click', function(e) {
             e.preventDefault();
-            alert('Account creation page would open here.');
+            window.location.href = 'Registration.html';
         });
 
-        // Auto-fill demo credentials
-        window.addEventListener('load', function() {
-            if (!sessionStorage.getItem('hasVisitedLogin')) {
-                usernameInput.value = 'alexandra';
-                passwordInputField.value = 'password123';
-                sessionStorage.setItem('hasVisitedLogin', 'true');
-                
-                setTimeout(() => {
-                    alert('👋 Demo credentials pre-filled!\n\nUsername: alexandra\nPassword: password123');
-                }, 500);
-            }
-        });
     </script>
 </body>
 </html>

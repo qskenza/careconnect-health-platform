@@ -126,6 +126,8 @@
         }
 
         .medical-item-name { font-weight: 500; color: #333; }
+        .remove-medical-btn { margin-left: 8px; border: none; background: #fdecea; color: #c62828; border-radius: 50%; width: 22px; height: 22px; font-size: 0.75rem; cursor: pointer; line-height: 22px; padding: 0; }
+        .remove-medical-btn:hover { background: #c62828; color: white; }
         .medical-item-severity { font-size: 0.8rem; padding: 0.2rem 0.6rem; border-radius: 12px; font-weight: 600; }
         .severity-severe { background: #ffebee; color: #c62828; }
         .severity-moderate { background: #fff3e0; color: #ef6c00; }
@@ -342,25 +344,43 @@
             if (has(data.allergies)) {
                 html += '<div class="medical-section"><div class="medical-section-title">Allergies</div>';
                 data.allergies.forEach(a => {
-                    html += `<div class="medical-item"><span class="medical-item-name">${esc(a.name)}</span>${a.severity ? `<span class="medical-item-severity severity-${a.severity}">${esc(a.severity)}</span>` : ''}</div>`;
+                    html += `<div class="medical-item"><span class="medical-item-name">${esc(a.name)}</span><span>${a.severity ? `<span class="medical-item-severity severity-${a.severity}">${esc(a.severity)}</span>` : ''}${removeBtn(a)}</span></div>`;
                 });
                 html += '</div>';
             }
             if (has(data.medications)) {
                 html += '<div class="medical-section"><div class="medical-section-title">Medications</div>';
                 data.medications.forEach(m => {
-                    html += `<div class="medical-item"><span class="medical-item-name">${esc(m.name)}</span></div>`;
+                    html += `<div class="medical-item"><span class="medical-item-name">${esc(m.name)}</span>${removeBtn(m)}</div>`;
                 });
                 html += '</div>';
             }
             if (has(data.conditions)) {
                 html += '<div class="medical-section"><div class="medical-section-title">Conditions</div>';
                 data.conditions.forEach(c => {
-                    html += `<div class="medical-item"><span class="medical-item-name">${esc(c.name)}</span>${c.severity ? `<span class="medical-item-severity severity-${c.severity}">${esc(c.severity)}</span>` : ''}</div>`;
+                    html += `<div class="medical-item"><span class="medical-item-name">${esc(c.name)}</span><span>${c.severity ? `<span class="medical-item-severity severity-${c.severity}">${esc(c.severity)}</span>` : ''}${removeBtn(c)}</span></div>`;
                 });
                 html += '</div>';
             }
             container.innerHTML = html;
+        }
+
+        function removeBtn(item) {
+            return `<button class="remove-medical-btn" title="Remove" onclick="removeMedicalEntry(${item.id}, '${esc(item.name).replace(/'/g, "&#39;")}')">✕</button>`;
+        }
+
+        async function removeMedicalEntry(id, name) {
+            if (!confirm(`Remove "${name}" from your medical information?`)) return;
+            try {
+                const response = await fetch(`${API_URL}/medical-records/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+                });
+                if (!response.ok) throw new Error((await response.json()).detail || 'Failed');
+                loadMedicalRecords();
+            } catch (e) {
+                alert('❌ Could not remove this entry: ' + e.message);
+            }
         }
 
         function displayEmptyMedical() {
@@ -386,7 +406,7 @@
             if (!visits.length) { displayEmptyVisits(); return; }
             let html = '';
             visits.slice(0, 3).forEach(v => {
-                html += `<div class="visit-item"><div class="visit-date">${formatDate(v.date)}</div><div class="visit-info">${esc(v.diagnosis || 'General Checkup')}</div><div class="visit-doctor">Dr. ${esc(v.doctor_name || 'Unknown')}</div></div>`;
+                html += `<div class="visit-item"><div class="visit-date">${formatDate(v.date)}</div><div class="visit-info">${esc(v.diagnosis || 'General Checkup')}</div><div class="visit-doctor">${esc(drName(v.doctor_name))}</div></div>`;
             });
             document.getElementById('visitsContainer').innerHTML = html;
         }
@@ -402,7 +422,7 @@
 
         async function loadUpcomingAppointments() {
             try {
-                const response = await fetch(`${API_URL}/appointments`, {
+                const response = await fetch(`${API_URL}/appointments/upcoming`, {
                     headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
                 });
                 if (response.ok) { const data = await response.json(); displayAppointments(Array.isArray(data) ? data : data.appointments || []); }
@@ -411,16 +431,16 @@
         }
 
         function displayAppointments(appointments) {
-            const upcoming = appointments.filter(a => new Date(a.date || a.appointment_date) >= new Date() && a.status !== 'cancelled');
+            const upcoming = appointments.filter(a => a.status !== 'cancelled');
             if (!upcoming.length) { displayEmptyAppointments(); return; }
             let html = '';
-            upcoming.slice(0, 2).forEach(a => {
+            upcoming.slice(0, 3).forEach(a => {
                 const canReschedule = a.can_reschedule !== false;
                 html += `
                     <div class="appointment-item">
                         <div class="appointment-date">${formatDate(a.date || a.appointment_date)}</div>
                         <div class="appointment-time">${esc(a.time || a.appointment_time || 'TBD')}</div>
-                        <div class="appointment-doctor">Dr. ${esc(a.doctor_name || 'Unknown')}</div>
+                        <div class="appointment-doctor">${esc(drName(a.doctor_name))}</div>
                         <span class="appointment-type">${esc(a.type || 'General')}</span>
                         <div style="margin-top: 10px; display: flex; gap: 8px;">
                             ${canReschedule ? `<button onclick="rescheduleAppointment(${a.id})" style="padding: 6px 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Reschedule</button>` : ''}
@@ -441,8 +461,9 @@
         }
 
         function getInitials(name) { if (!name) return '--'; const n = name.trim().split(' '); return n.length >= 2 ? (n[0][0] + n[n.length-1][0]).toUpperCase() : name.substring(0,2).toUpperCase(); }
-        function formatDate(d) { if (!d) return 'N/A'; return new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }); }
+        function formatDate(d) { if (!d) return 'N/A'; if (/^\d{4}-\d{2}-\d{2}$/.test(d)) { const [y, m, day] = d.split('-').map(Number); d = new Date(y, m - 1, day); } return new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }); }
         function esc(t) { if (!t) return ''; const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+        function drName(n) { n = (n || 'Unknown').trim(); return /^dr\.?\s/i.test(n) ? n : 'Dr. ' + n; }
         function logout() { sessionStorage.clear(); window.location.href = 'Login.html'; }
 
         async function rescheduleAppointment(appointmentId) {

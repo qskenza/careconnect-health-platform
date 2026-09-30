@@ -406,8 +406,8 @@
                 </ul>
             </nav>
             <div class="user-info">
-                <div class="user-avatar">AM</div>
-                <span>Alexandra Miller</span>
+                <div class="user-avatar" id="userAvatar">--</div>
+                <span id="userName">Student</span>
                 <button onclick="logout()" style="margin-left: 1rem; padding: 0.5rem 1rem; background: #d32f2f; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600;">
                     Logout
                 </button>
@@ -453,7 +453,7 @@
                     <h3 class="info-title">Important Information</h3>
                     <p class="info-text">
                         In case of a medical emergency, remain calm and provide clear information to the emergency service operator. 
-                        If possible, have your student ID (2023001) and health insurance details ready. Our emergency response team is trained 
+                        If possible, have your student ID (<span id="userIdText">N/A</span>) and health insurance details ready. Our emergency response team is trained 
                         to handle critical situations with care and professionalism. Remember to state your location clearly and 
                         describe the nature of the emergency.
                     </p>
@@ -525,7 +525,36 @@
     </div>
 
     <script>
-    const API_URL = 'http://localhost:8000';
+    // API_URL comes from common.js
+    const ME = {
+        name: sessionStorage.getItem('fullName') || 'Student',
+        id: sessionStorage.getItem('studentId') || 'N/A',
+        dept: sessionStorage.getItem('department') || 'AUI'
+    };
+
+    // Show the logged-in student in the header and info text
+    document.addEventListener('DOMContentLoaded', () => {
+        const parts = ME.name.trim().split(/\s+/);
+        document.getElementById('userName').textContent = ME.name;
+        document.getElementById('userAvatar').textContent = ((parts[0] || '')[0] + ((parts.length > 1 ? parts[parts.length - 1] : '')[0] || '')).toUpperCase();
+        document.getElementById('userIdText').textContent = ME.id;
+    });
+
+    // Creates an emergency request that nurses see on their dashboard
+    async function reportEmergency(type, description, location, lat, lng) {
+        try {
+            const response = await authenticatedFetch(`${API_URL}/emergency`, {
+                method: 'POST',
+                body: JSON.stringify({ type, description, location, latitude: lat ?? null, longitude: lng ?? null })
+            });
+            if (!response || !response.ok) throw new Error('Request failed');
+            return true;
+        } catch (e) {
+            console.error('Emergency report failed:', e);
+            alert('⚠️ Could not alert the health center online. Please call 0535 86 2222 now.');
+            return false;
+        }
+    }
 
     // Wait for DOM to be fully loaded
     document.addEventListener('DOMContentLoaded', function() {
@@ -541,7 +570,8 @@
                 const confirmCall = confirm(`ARE YOU IN IMMEDIATE DANGER?\n\nClick OK to call Emergency Services (${emergencyNumber}) for:\n• Life-threatening emergencies\n• Serious injuries\n• Medical crises\n\nOR click Cancel for non-emergency assistance.`);
                 
                 if (confirmCall) {
-                    alert(`🚨 DIALING EMERGENCY SERVICES (${emergencyNumber})\n\nYour information:\n• Name: Alexandra Miller\n• Student ID: 2023001\n• Department: SSE - Computer Science\n\nPlease provide:\n1. Your exact location\n2. Nature of emergency\n3. Number of people involved\n\nStay on the line until help arrives.`);
+                    alert(`🚨 DIALING EMERGENCY SERVICES (${emergencyNumber})\n\nYour information:\n• Name: ${ME.name}\n• Student ID: ${ME.id}\n• Department: ${ME.dept}\n\nPlease provide:\n1. Your exact location\n2. Nature of emergency\n3. Number of people involved\n\nStay on the line until help arrives.`);
+                    reportEmergency('emergency_call', 'Student started an emergency services call (2222)', null);
                     logEmergencyAction('Emergency Services (2222) call initiated');
                 }
             });
@@ -554,22 +584,25 @@
                         const lat = position.coords.latitude;
                         const lng = position.coords.longitude;
                         
-                        const locationMessage = `📍 EMERGENCY LOCATION SHARED:\n\n📱 GPS Coordinates:\nLatitude: ${lat.toFixed(6)}\nLongitude: ${lng.toFixed(6)}\n\n👤 Student Info:\nName: Alexandra Miller\nID: 2023001\nDepartment: SSE\n\n⏰ Timestamp: ${new Date().toLocaleString()}\n\n✅ Location sent to:\n• Emergency Services (2222)\n• Campus Security\n• Health Center`;
+                        const locationMessage = `📍 EMERGENCY LOCATION SHARED:\n\n📱 GPS Coordinates:\nLatitude: ${lat.toFixed(6)}\nLongitude: ${lng.toFixed(6)}\n\n👤 Student Info:\nName: ${ME.name}\nID: ${ME.id}\nDepartment: SSE\n\n⏰ Timestamp: ${new Date().toLocaleString()}\n\n✅ Location sent to:\n• Emergency Services (2222)\n• Campus Security\n• Health Center`;
                         
-                        alert(locationMessage);
+                        reportEmergency('location', 'Student shared their location from the Emergency page', `GPS ${lat.toFixed(5)}, ${lng.toFixed(5)}`, lat, lng)
+                            .then(ok => ok && alert(locationMessage + '\n\n✅ The health center nurses have been alerted.'));
                         logEmergencyAction(`Location shared: ${lat}, ${lng}`);
                     }, function(error) {
                         const manualLocation = prompt('Unable to get GPS location.\n\nPlease enter your current location\n(building/room/address):');
                         if (manualLocation) {
-                            alert(`📍 Location shared: ${manualLocation}\n\nStudent: Alexandra Miller (2023001)\nDepartment: SSE - Computer Science`);
+                            alert(`📍 Location shared: ${manualLocation}\n\nStudent: ${ME.name} (${ME.id})\nDepartment: ${ME.dept}`);
+                            reportEmergency('location', 'Student shared their location from the Emergency page', manualLocation);
                             logEmergencyAction(`Manual location: ${manualLocation}`);
                         }
                     });
                 } else {
                     const manualLocation = prompt('Enter your current location\n(building/room/address):');
                     if (manualLocation) {
-                        alert(`📍 Location shared: ${manualLocation}\n\nStudent: Alexandra Miller (2023001)`);
-                        logEmergencyAction(`Manual location: ${manualLocation}`);
+                        alert(`📍 Location shared: ${manualLocation}\n\nStudent: ${ME.name} (${ME.id})`);
+                        reportEmergency('location', 'Student shared their location from the Emergency page', manualLocation);
+                            logEmergencyAction(`Manual location: ${manualLocation}`);
                     }
                 }
             });
@@ -587,7 +620,7 @@
                 const phoneMatch = onclickAttr.match(/'([0-9-]+)'/);
                 const phoneNumber = phoneMatch ? phoneMatch[1] : 'Unknown';
                 
-                const confirmCall = confirm(`Call ${contactName}?\n\nPhone: ${phoneNumber}\n\nYour info will be shared:\n• Alexandra Miller\n• Student ID: 2023001\n• SSE - Computer Science`);
+                const confirmCall = confirm(`Call ${contactName}?\n\nPhone: ${phoneNumber}\n\nYour info will be shared:\n• ${ME.name}\n• Student ID: ${ME.id}\n• ${ME.dept}`);
                 
                 if (confirmCall) {
                     alert(`📞 Calling ${contactName}...\n\nPhone: ${phoneNumber}\n\nConnecting your emergency call...`);
@@ -607,7 +640,7 @@
                         return;
                     }
                     
-                    alert(`📱 MESSAGE SENT\n\nTo: ${contactName}\nFrom: Alexandra Miller (2023001)\nMessage: "${message}"\n\nYou will receive a confirmation when read.`);
+                    alert(`📱 MESSAGE SENT\n\nTo: ${contactName}\nFrom: ${ME.name} (${ME.id})\nMessage: "${message}"\n\nYou will receive a confirmation when read.`);
                     logEmergencyAction(`Sent message to ${contactName}`);
                 }
             });
@@ -616,10 +649,10 @@
         // Emergency hotline
         document.querySelector('.emergency-hotline').addEventListener('click', function() {
             const hotlineNumber = '0535 86 2222';
-            const confirmCall = confirm(`Call 24/7 Emergency Hotline?\n\nNumber: ${hotlineNumber}\n\nServices Available:\n• Immediate medical advice\n• Crisis counseling\n• Emergency coordination\n\nYour info: Alexandra Miller (2023001)\nClick OK to call.`);
+            const confirmCall = confirm(`Call 24/7 Emergency Hotline?\n\nNumber: ${hotlineNumber}\n\nServices Available:\n• Immediate medical advice\n• Crisis counseling\n• Emergency coordination\n\nYour info: ${ME.name} (${ME.id})\nClick OK to call.`);
             
             if (confirmCall) {
-                alert(`📞 Calling Emergency Hotline: ${hotlineNumber}\n\nStudent: Alexandra Miller\nID: 2023001\nDepartment: SSE\n\nConnecting...`);
+                alert(`📞 Calling Emergency Hotline: ${hotlineNumber}\n\nStudent: ${ME.name}\nID: ${ME.id}\nDepartment: SSE\n\nConnecting...`);
                 logEmergencyAction('Called Emergency Hotline');
             }
         });
@@ -633,9 +666,9 @@
             const procedures = `🚨 EMERGENCY PROCEDURES 🚨
 
 Your Information:
-- Name: Alexandra Miller
-- Student ID: 2023001
-- Department: SSE - Computer Science
+- Name: ${ME.name}
+- Student ID: ${ME.id}
+- Department: ${ME.dept}
 - Academic Year: 2025/2026
 
 1. STAY CALM
@@ -650,7 +683,7 @@ Your Information:
    • Your exact location (building, room, floor)
    • Nature of emergency (medical, security, fire)
    • Number of people involved
-   • Your student ID: 2023001
+   • Your student ID: ${ME.id}
 
 4. FOLLOW INSTRUCTIONS
    • Stay on the line with the operator
@@ -673,13 +706,13 @@ Emergency Numbers:
 
         function logEmergencyAction(action) {
             const timestamp = new Date().toLocaleString();
-            console.log(`[${timestamp}] 🚨 ${action} - Alexandra Miller (2023001)`);
+            console.log(`[${timestamp}] 🚨 ${action} - ${ME.name} (${ME.id})`);
             
             // TODO: Send to backend
             // fetch(`${API_URL}/emergency`, { ... });
         }
 
-        console.log('🚨 Emergency System Ready - Alexandra Miller (2023001)');
+        console.log('🚨 Emergency System Ready - ${ME.name} (${ME.id})');
     });
 </script>
     </script>
@@ -708,7 +741,7 @@ Emergency Numbers:
     </div>
 
     <script>
-    let conversationId=null,userContext={name:'Alexandra Miller',student_id:'2023001',department:'SSE',major:'Computer Science'};const chatButton=document.getElementById('chat-button'),chatWindow=document.getElementById('chat-window'),closeChat=document.getElementById('close-chat'),chatMessages=document.getElementById('chat-messages'),chatInput=document.getElementById('chat-input'),sendButton=document.getElementById('send-button');chatButton.addEventListener('click',()=>{chatWindow.classList.toggle('open');chatWindow.classList.contains('open')&&chatInput.focus()});closeChat.addEventListener('click',()=>chatWindow.classList.remove('open'));async function sendMessage(msg){if(!msg.trim())return;addMessage(msg,'user');chatInput.value='';sendButton.disabled=true;showTypingIndicator();try{const res=await fetch(`${API_URL}/chat/`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,conversation_id:conversationId,user_context:userContext})});const data=await res.json();hideTypingIndicator();conversationId=data.conversation_id;addMessage(data.reply,'bot')}catch(e){hideTypingIndicator();addMessage('Sorry, error occurred.',  'bot');console.error(e)}finally{sendButton.disabled=false}}function addMessage(text,type){const msgDiv=document.createElement('div');msgDiv.className=`message ${type}`;const contentDiv=document.createElement('div');contentDiv.className='message-content';contentDiv.textContent=text;const timeDiv=document.createElement('div');timeDiv.className='message-time';timeDiv.textContent=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});msgDiv.appendChild(contentDiv);msgDiv.appendChild(timeDiv);chatMessages.appendChild(msgDiv);chatMessages.scrollTop=chatMessages.scrollHeight}function showTypingIndicator(){const indicator=document.createElement('div');indicator.className='message bot';indicator.id='typing-indicator';indicator.innerHTML='<div style="padding:12px;background:white;border:1px solid #e8f5e8;border-radius:12px"><span style="height:8px;width:8px;background:#4caf50;border-radius:50%;display:inline-block;margin-right:4px;animation:typing 1.4s infinite"></span><span style="height:8px;width:8px;background:#4caf50;border-radius:50%;display:inline-block;margin-right:4px;animation:typing 1.4s infinite 0.2s"></span><span style="height:8px;width:8px;background:#4caf50;border-radius:50%;display:inline-block;animation:typing 1.4s infinite 0.4s"></span></div>';chatMessages.appendChild(indicator);chatMessages.scrollTop=chatMessages.scrollHeight}function hideTypingIndicator(){const indicator=document.getElementById('typing-indicator');indicator&&indicator.remove()}sendButton.addEventListener('click',()=>sendMessage(chatInput.value));chatInput.addEventListener('keypress',e=>{e.key==='Enter'&&sendMessage(chatInput.value)});document.querySelectorAll('.quick-action-btn').forEach(btn=>btn.addEventListener('click',()=>sendMessage(btn.dataset.msg)));const style=document.createElement('style');style.textContent='@keyframes typing{0%,60%,100%{opacity:0.3}30%{opacity:1}}';document.head.appendChild(style);
+    let conversationId=null,userContext={name:sessionStorage.getItem('fullName')||'Student',student_id:sessionStorage.getItem('studentId')||'N/A'};const chatButton=document.getElementById('chat-button'),chatWindow=document.getElementById('chat-window'),closeChat=document.getElementById('close-chat'),chatMessages=document.getElementById('chat-messages'),chatInput=document.getElementById('chat-input'),sendButton=document.getElementById('send-button');chatButton.addEventListener('click',()=>{chatWindow.classList.toggle('open');chatWindow.classList.contains('open')&&chatInput.focus()});closeChat.addEventListener('click',()=>chatWindow.classList.remove('open'));async function sendMessage(msg){if(!msg.trim())return;addMessage(msg,'user');chatInput.value='';sendButton.disabled=true;showTypingIndicator();try{const res=await fetch(`${API_URL}/chat/`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,conversation_id:conversationId,user_context:userContext})});const data=await res.json();hideTypingIndicator();conversationId=data.conversation_id;addMessage(data.reply,'bot')}catch(e){hideTypingIndicator();addMessage('Sorry, error occurred.',  'bot');console.error(e)}finally{sendButton.disabled=false}}function addMessage(text,type){const msgDiv=document.createElement('div');msgDiv.className=`message ${type}`;const contentDiv=document.createElement('div');contentDiv.className='message-content';contentDiv.textContent=text;const timeDiv=document.createElement('div');timeDiv.className='message-time';timeDiv.textContent=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});msgDiv.appendChild(contentDiv);msgDiv.appendChild(timeDiv);chatMessages.appendChild(msgDiv);chatMessages.scrollTop=chatMessages.scrollHeight}function showTypingIndicator(){const indicator=document.createElement('div');indicator.className='message bot';indicator.id='typing-indicator';indicator.innerHTML='<div style="padding:12px;background:white;border:1px solid #e8f5e8;border-radius:12px"><span style="height:8px;width:8px;background:#4caf50;border-radius:50%;display:inline-block;margin-right:4px;animation:typing 1.4s infinite"></span><span style="height:8px;width:8px;background:#4caf50;border-radius:50%;display:inline-block;margin-right:4px;animation:typing 1.4s infinite 0.2s"></span><span style="height:8px;width:8px;background:#4caf50;border-radius:50%;display:inline-block;animation:typing 1.4s infinite 0.4s"></span></div>';chatMessages.appendChild(indicator);chatMessages.scrollTop=chatMessages.scrollHeight}function hideTypingIndicator(){const indicator=document.getElementById('typing-indicator');indicator&&indicator.remove()}sendButton.addEventListener('click',()=>sendMessage(chatInput.value));chatInput.addEventListener('keypress',e=>{e.key==='Enter'&&sendMessage(chatInput.value)});document.querySelectorAll('.quick-action-btn').forEach(btn=>btn.addEventListener('click',()=>sendMessage(btn.dataset.msg)));const style=document.createElement('style');style.textContent='@keyframes typing{0%,60%,100%{opacity:0.3}30%{opacity:1}}';document.head.appendChild(style);
     </script>
 </body>
 </html>
